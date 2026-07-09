@@ -1,0 +1,29 @@
+name: Generate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Generate
+        run: go generate ./...
+      - name: Verify no diff
+        run: |
+          git add -A
+          if ! git diff --cached --exit-code; then
+            echo "::error::go generate produced changes; run 'make generate' and commit the result."
+            exit 1
+          fi
