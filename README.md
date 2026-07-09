@@ -116,6 +116,7 @@ Commands:
 | `peertube upload` | Upload a video. |
 | `peertube login` | Verify and persist credentials; prompts for missing username/password; `--default` sets the default instance. |
 | `peertube channel list` | List the authenticated user's channels. |
+| `peertube channel create` | Create a video channel (`--name`, `--display-name`). |
 
 Credential resolution, highest precedence first:
 

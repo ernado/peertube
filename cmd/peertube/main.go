@@ -151,7 +151,7 @@ func newLoginCmd(o *options) *cobra.Command {
 func newChannelCmd(o *options) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "channel",
-		Short: "Inspect video channels",
+		Short: "Manage video channels",
 		Args:  cobra.NoArgs,
 	}
 	cmd.AddCommand(&cobra.Command{
@@ -163,6 +163,27 @@ func newChannelCmd(o *options) *cobra.Command {
 			return o.listChannels(cmd.Context(), cmd.OutOrStdout(), cmd.ErrOrStderr())
 		},
 	})
+	cmd.AddCommand(newChannelCreateCmd(o))
+	return cmd
+}
+
+// newChannelCreateCmd builds the "channel create" command.
+func newChannelCreateCmd(o *options) *cobra.Command {
+	var p channelCreateFlags
+	cmd := &cobra.Command{
+		Use:          "create",
+		Short:        "Create a video channel",
+		SilenceUsage: true,
+		Args:         cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return o.createChannel(cmd.Context(), cmd.OutOrStdout(), cmd.ErrOrStderr(), p)
+		},
+	}
+	f := cmd.Flags()
+	f.StringVarP(&p.name, "name", "n", "", "immutable channel handle, e.g. my_channel (required)")
+	f.StringVarP(&p.displayName, "display-name", "D", "", "channel display name (required)")
+	f.StringVarP(&p.description, "description", "d", "", "channel description")
+	f.StringVarP(&p.support, "support", "s", "", "how to support/fund the channel")
 	return cmd
 }
 

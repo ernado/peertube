@@ -179,6 +179,48 @@ func (o options) listChannels(ctx context.Context, outw, logw io.Writer) error {
 	return tw.Flush()
 }
 
+// channelCreateFlags holds the "channel create" command flags.
+type channelCreateFlags struct {
+	name        string
+	displayName string
+	description string
+	support     string
+}
+
+// createChannel creates a new video channel and prints its id.
+func (o options) createChannel(ctx context.Context, outw, logw io.Writer, p channelCreateFlags) error {
+	if err := o.validateAuth(); err != nil {
+		return err
+	}
+	if p.name == "" || p.displayName == "" {
+		var missing []string
+		if p.name == "" {
+			missing = append(missing, "--name")
+		}
+		if p.displayName == "" {
+			missing = append(missing, "--display-name")
+		}
+		return fmt.Errorf("missing required flags: %s", strings.Join(missing, ", "))
+	}
+
+	client, err := o.login(ctx, logw)
+	if err != nil {
+		return err
+	}
+	ch, err := client.CreateChannel(ctx, peertube.CreateChannelParams{
+		Name:        p.name,
+		DisplayName: p.displayName,
+		Description: p.description,
+		Support:     p.support,
+	})
+	if err != nil {
+		return fmt.Errorf("create channel: %w", err)
+	}
+
+	fmt.Fprintf(outw, "Created channel: id=%d name=%s\n", ch.ID, ch.Name)
+	return nil
+}
+
 // resolveChannelID returns the channel to upload to. When --channel-id is set it
 // is used as-is; otherwise the user's channels are fetched: a single channel is
 // selected automatically, while multiple channels require an explicit choice.

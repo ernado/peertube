@@ -74,6 +74,12 @@ func mockServer(t *testing.T, channelsJSON string) *httptest.Server {
 	mux.HandleFunc("/api/v1/users/me", func(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, `{"videoChannels":`+channelsJSON+`}`)
 	})
+	mux.HandleFunc("/api/v1/video-channels", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("unexpected method %s", r.Method)
+		}
+		io.WriteString(w, `{"videoChannel":{"id":123}}`)
+	})
 	mux.HandleFunc("/api/v1/videos/upload-resumable", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodPost:
@@ -220,6 +226,46 @@ func TestChannelList(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("output should contain %q:\n%s", want, out)
 		}
+	}
+}
+
+func TestChannelCreate(t *testing.T) {
+	srv := mockServer(t, `[]`)
+	defer srv.Close()
+
+	out, err := execViaCmd(t, "channel", "create",
+		"--url", srv.URL, "--username", "alice", "--password", "pw",
+		"--name", "my_channel", "--display-name", "My Channel",
+	)
+	if err != nil {
+		t.Fatalf("channel create: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "id=123") || !strings.Contains(out, "my_channel") {
+		t.Errorf("expected created channel output: %s", out)
+	}
+}
+
+func TestChannelCreateRequiresNameAndDisplayName(t *testing.T) {
+	out, err := execViaCmd(t, "channel", "create",
+		"--url", "https://x.example", "--username", "alice", "--password", "pw",
+		"--name", "only_name",
+	)
+	if err == nil {
+		t.Fatalf("expected error, out: %s", out)
+	}
+	if !strings.Contains(err.Error(), "--display-name") {
+		t.Errorf("error should mention --display-name: %v", err)
+	}
+}
+
+func TestChannelCreateRequiresAuth(t *testing.T) {
+	_, err := execViaCmd(t, "channel", "create", "--url", "https://x.example",
+		"--name", "a", "--display-name", "b")
+	if err == nil {
+		t.Fatal("expected auth error")
+	}
+	if !strings.Contains(err.Error(), "--password") {
+		t.Errorf("error should mention missing auth: %v", err)
 	}
 }
 
