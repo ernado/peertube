@@ -1,0 +1,197 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+	"text/tabwriter"
+	"time"
+
+	"github.com/ernado/peertube"
+	"github.com/schollz/progressbar/v3"
+)
+
+// execute logs in and uploads the video. Progress goes to logw (stderr) and the
+// final result to outw (stdout); both are injected so the flow is testable.
+func (o options) execute(ctx context.Context, outw, logw io.Writer) error {
+	f, err := os.Open(o.file)
+	if err != nil {
+		return fmt.Errorf("open video: %w", err)
+	}
+	defer func() { _ = f.Close() }()
+	info, err := f.Stat()
+	if err != nil {
+		return fmt.Errorf("stat video: %w", err)
+	}
+
+	client, err := o.login(ctx, logw)
+	if err != nil {
+		return err
+	}
+
+	channelID, err := o.resolveChannelID(ctx, client, logw)
+	if err != nil {
+		return err
+	}
+
+	name := o.name
+	if name == "" {
+		name = strings.TrimSuffix(filepath.Base(o.file), filepath.Ext(o.file))
+	}
+	params := peertube.UploadParams{
+		Name:            name,
+		ChannelID:       channelID,
+		Privacy:         peertube.Privacy(o.privacy),
+		Category:        o.category,
+		Licence:         o.licence,
+		Language:        o.language,
+		Description:     o.description,
+		Support:         o.support,
+		Tags:            o.tags,
+		NSFW:            boolPtr(o.nsfw),
+		WaitTranscoding: boolPtr(o.waitTranscoding),
+		DownloadEnabled: boolPtr(o.downloadEnabled),
+	}
+	filename := filepath.Base(o.file)
+
+	fmt.Fprintf(logw, "Uploading %q (%d bytes) to channel %d...\n", name, info.Size(), channelID)
+
+	// Advance a progress bar as the library reads the file for upload.
+	bar := newUploadBar(info.Size(), logw)
+	reader := progressbar.NewReader(f, bar)
+
+	var res *peertube.UploadedVideo
+	if o.legacy {
+		res, err = client.Upload(ctx, params, filename, &reader)
+	} else {
+		res, err = client.UploadResumable(ctx, params, filename, &reader, info.Size(),
+			peertube.ResumableOptions{ChunkSize: o.chunkSize})
+	}
+	if err != nil {
+		return fmt.Errorf("upload: %w", err)
+	}
+	_ = bar.Finish()
+
+	fmt.Fprintf(outw, "Uploaded: id=%d uuid=%s shortUUID=%s\n", res.ID, res.UUID, res.ShortUUID)
+	return nil
+}
+
+// newUploadBar builds a byte-oriented progress bar rendering to w.
+func newUploadBar(size int64, w io.Writer) *progressbar.ProgressBar {
+	return progressbar.NewOptions64(size,
+		progressbar.OptionSetWriter(w),
+		progressbar.OptionSetDescription("uploading"),
+		progressbar.OptionShowBytes(true),
+		progressbar.OptionShowCount(),
+		progressbar.OptionSetWidth(30),
+		progressbar.OptionThrottle(100*time.Millisecond),
+		progressbar.OptionClearOnFinish(),
+	)
+}
+
+// login builds an authenticated client from the shared auth flags.
+func (o options) login(ctx context.Context, logw io.Writer) (*peertube.Client, error) {
+	client, err := peertube.NewClient(o.url)
+	if err != nil {
+		return nil, err
+	}
+	fmt.Fprintf(logw, "Logging in to %s as %s...\n", o.url, o.username)
+	if _, err := client.Login(ctx, o.username, o.password, peertube.LoginOptions{OTP: o.otp}); err != nil {
+		return nil, fmt.Errorf("login: %w", err)
+	}
+	return client, nil
+}
+
+// loginAndSave verifies the credentials against the instance and, on success,
+// persists them to the config file for reuse by other commands.
+func (o options) loginAndSave(ctx context.Context, logw io.Writer, makeDefault bool) error {
+	if err := o.validateAuth(); err != nil {
+		return err
+	}
+	if _, err := o.login(ctx, logw); err != nil {
+		return err
+	}
+
+	cfg, err := loadConfig()
+	if err != nil {
+		return err
+	}
+	cfg.set(o.url, instance{Username: o.username, Password: o.password}, makeDefault)
+	if err := cfg.save(); err != nil {
+		return err
+	}
+
+	path, _ := configPathFn()
+	fmt.Fprintf(logw, "Saved credentials for %s to %s\n", o.url, path)
+	if cfg.Default == o.url {
+		fmt.Fprintf(logw, "%s is now the default instance\n", o.url)
+	}
+	return nil
+}
+
+// listChannels prints the authenticated user's video channels to outw.
+func (o options) listChannels(ctx context.Context, outw, logw io.Writer) error {
+	if err := o.validateAuth(); err != nil {
+		return err
+	}
+	client, err := o.login(ctx, logw)
+	if err != nil {
+		return err
+	}
+	channels, err := client.MyChannels(ctx)
+	if err != nil {
+		return fmt.Errorf("list channels: %w", err)
+	}
+	if len(channels) == 0 {
+		fmt.Fprintln(outw, "No video channels.")
+		return nil
+	}
+
+	tw := tabwriter.NewWriter(outw, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "ID\tNAME\tDISPLAY NAME")
+	for _, ch := range channels {
+		fmt.Fprintf(tw, "%d\t%s\t%s\n", ch.ID, ch.Name, ch.DisplayName)
+	}
+	return tw.Flush()
+}
+
+// resolveChannelID returns the channel to upload to. When --channel-id is set it
+// is used as-is; otherwise the user's channels are fetched: a single channel is
+// selected automatically, while multiple channels require an explicit choice.
+func (o options) resolveChannelID(ctx context.Context, client *peertube.Client, logw io.Writer) (int, error) {
+	if o.channelID != 0 {
+		return o.channelID, nil
+	}
+
+	channels, err := client.MyChannels(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("discover channels: %w", err)
+	}
+	switch len(channels) {
+	case 0:
+		return 0, fmt.Errorf("account has no video channels; create one first")
+	case 1:
+		ch := channels[0]
+		fmt.Fprintf(logw, "Auto-selected channel %d (%s)\n", ch.ID, channelLabel(ch))
+		return ch.ID, nil
+	default:
+		var b strings.Builder
+		fmt.Fprintf(&b, "account has %d channels; select one with --channel-id:\n", len(channels))
+		for _, ch := range channels {
+			fmt.Fprintf(&b, "  %d\t%s\n", ch.ID, channelLabel(ch))
+		}
+		return 0, fmt.Errorf("%s", strings.TrimRight(b.String(), "\n"))
+	}
+}
+
+func channelLabel(ch peertube.Channel) string {
+	if ch.DisplayName != "" && ch.DisplayName != ch.Name {
+		return fmt.Sprintf("%s — %s", ch.Name, ch.DisplayName)
+	}
+	return ch.Name
+}
+
+func boolPtr(b bool) *bool { return &b }
