@@ -77,7 +77,7 @@ func TestLoginWithPresetClientAndOTP(t *testing.T) {
 		hitClientEndpoint = true
 	})
 	mux.HandleFunc("/api/v1/users/token", func(w http.ResponseWriter, r *http.Request) {
-		otp = r.Header.Get("x-peertube-otp")
+		otp = r.Header.Get("X-Peertube-Otp")
 		io.WriteString(w, `{"access_token":"atok"}`)
 	})
 	srv := httptest.NewServer(mux)

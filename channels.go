@@ -5,9 +5,13 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"mime"
 	"mime/multipart"
 	"net/http"
+	"net/textproto"
 	"net/url"
+	"path"
+	"strings"
 
 	"github.com/go-faster/errors"
 )
@@ -170,7 +174,7 @@ func (c *Client) uploadChannelImage(ctx context.Context, handle, kind, field, fi
 	pr, pw := io.Pipe()
 	mw := multipart.NewWriter(pw)
 	go func() {
-		part, err := mw.CreateFormFile(field, filename)
+		part, err := imagePart(mw, field, filename)
 		if err == nil {
 			_, err = io.Copy(part, image)
 		}
@@ -180,8 +184,8 @@ func (c *Client) uploadChannelImage(ctx context.Context, handle, kind, field, fi
 		_ = pw.CloseWithError(err)
 	}()
 
-	path := "video-channels/" + url.PathEscape(handle) + "/" + kind + "/pick"
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.apiURL(path), pr)
+	endpoint := "video-channels/" + url.PathEscape(handle) + "/" + kind + "/pick"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.apiURL(endpoint), pr)
 	if err != nil {
 		return nil, errors.Wrap(err, "build request")
 	}
@@ -210,4 +214,22 @@ func (c *Client) uploadChannelImage(ctx context.Context, handle, kind, field, fi
 		return out.Avatars, nil
 	}
 	return out.Banners, nil
+}
+
+// quoteEscaper matches mime/multipart's escaping of field/file names.
+var quoteEscaper = strings.NewReplacer("\\", "\\\\", `"`, "\\\"")
+
+// imagePart creates a multipart file part whose Content-Type is derived from the
+// filename extension. PeerTube validates the avatar/banner MIME type and rejects
+// the default application/octet-stream that multipart.CreateFormFile sets.
+func imagePart(mw *multipart.Writer, field, filename string) (io.Writer, error) {
+	ct := mime.TypeByExtension(path.Ext(filename))
+	if ct == "" {
+		ct = "application/octet-stream"
+	}
+	h := textproto.MIMEHeader{}
+	h.Set("Content-Disposition",
+		`form-data; name="`+quoteEscaper.Replace(field)+`"; filename="`+quoteEscaper.Replace(filename)+`"`)
+	h.Set("Content-Type", ct)
+	return mw.CreatePart(h)
 }

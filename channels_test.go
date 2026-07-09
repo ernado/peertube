@@ -99,8 +99,8 @@ func TestCreateChannelRequiresAuth(t *testing.T) {
 }
 
 func TestSetChannelAvatar(t *testing.T) {
-	const img = "PNGDATA"
-	var gotField, gotFilename, gotData string
+	const img = "JPEGDATA"
+	var gotField, gotFilename, gotData, gotContentType string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/video-channels/my_channel/avatar/pick" {
 			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
@@ -115,6 +115,7 @@ func TestSetChannelAvatar(t *testing.T) {
 		}
 		gotField = part.FormName()
 		gotFilename = part.FileName()
+		gotContentType = part.Header.Get("Content-Type")
 		data, _ := io.ReadAll(part)
 		gotData = string(data)
 		io.WriteString(w, `{"avatars":[{"fileUrl":"https://h/a.png","width":48,"height":48}]}`)
@@ -122,12 +123,16 @@ func TestSetChannelAvatar(t *testing.T) {
 	defer srv.Close()
 
 	c := mustClient(t, srv.URL, WithToken("tok"))
-	imgs, err := c.SetChannelAvatar(context.Background(), "my_channel", "a.png", strings.NewReader(img))
+	imgs, err := c.SetChannelAvatar(context.Background(), "my_channel", "avatar.jpeg", strings.NewReader(img))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if gotField != "avatarfile" || gotFilename != "a.png" || gotData != img {
+	if gotField != "avatarfile" || gotFilename != "avatar.jpeg" || gotData != img {
 		t.Fatalf("unexpected part: field=%q file=%q data=%q", gotField, gotFilename, gotData)
+	}
+	// PeerTube rejects application/octet-stream; the part must carry the image type.
+	if gotContentType != "image/jpeg" {
+		t.Fatalf("part Content-Type = %q, want image/jpeg", gotContentType)
 	}
 	if len(imgs) != 1 || imgs[0].FileURL != "https://h/a.png" || imgs[0].Width != 48 {
 		t.Fatalf("unexpected images: %+v", imgs)

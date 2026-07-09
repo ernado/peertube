@@ -137,7 +137,7 @@ func (c *Client) token2FA(ctx context.Context, form url.Values, otp string) (Tok
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Length", strconv.Itoa(len(form.Encode())))
 	if otp != "" {
-		req.Header.Set("x-peertube-otp", otp)
+		req.Header.Set("X-Peertube-Otp", otp)
 	}
 
 	resp, err := c.http.Do(req)
