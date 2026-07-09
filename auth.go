@@ -11,6 +11,19 @@ import (
 	"github.com/go-faster/errors"
 )
 
+// OAuth2 form field names and grant types.
+const (
+	paramClientID     = "client_id"
+	paramClientSecret = "client_secret"
+	paramGrantType    = "grant_type"
+	paramUsername     = "username"
+	paramPassword     = "password"
+	paramRefreshToken = "refresh_token"
+
+	grantPassword = "password"
+	grantRefresh  = "refresh_token"
+)
+
 // OAuthClient holds the local OAuth client credentials required before login.
 type OAuthClient struct {
 	ClientID     string `json:"client_id"`
@@ -30,7 +43,7 @@ type Token struct {
 // (GET /oauth-clients/local). Login calls this automatically; it is exported
 // for callers who cache credentials.
 func (c *Client) OAuthClient(ctx context.Context) (OAuthClient, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.apiURL("oauth-clients/local"), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.apiURL("oauth-clients/local"), http.NoBody)
 	if err != nil {
 		return OAuthClient{}, errors.Wrap(err, "build request")
 	}
@@ -82,11 +95,11 @@ func (c *Client) Login(ctx context.Context, username, password string, opts ...L
 	}
 
 	form := url.Values{
-		"client_id":     {oc.ClientID},
-		"client_secret": {oc.ClientSecret},
-		"grant_type":    {"password"},
-		"username":      {username},
-		"password":      {password},
+		paramClientID:     {oc.ClientID},
+		paramClientSecret: {oc.ClientSecret},
+		paramGrantType:    {grantPassword},
+		paramUsername:     {username},
+		paramPassword:     {password},
 	}
 
 	tok, err := c.token2FA(ctx, form, opt.OTP)
@@ -101,10 +114,10 @@ func (c *Client) Login(ctx context.Context, username, password string, opts ...L
 // access token on the client.
 func (c *Client) Refresh(ctx context.Context, client OAuthClient, refreshToken string) (Token, error) {
 	form := url.Values{
-		"client_id":     {client.ClientID},
-		"client_secret": {client.ClientSecret},
-		"grant_type":    {"refresh_token"},
-		"refresh_token": {refreshToken},
+		paramClientID:     {client.ClientID},
+		paramClientSecret: {client.ClientSecret},
+		paramGrantType:    {grantRefresh},
+		paramRefreshToken: {refreshToken},
 	}
 	tok, err := c.token2FA(ctx, form, "")
 	if err != nil {

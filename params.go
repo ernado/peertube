@@ -6,6 +6,9 @@ import (
 	"github.com/go-faster/errors"
 )
 
+// fieldName is the JSON/form key for a video or channel name.
+const fieldName = "name"
+
 // validate checks the required fields and simple constraints.
 func (p UploadParams) validate() error {
 	if l := len(p.Name); l < 3 || l > 120 {
@@ -29,7 +32,7 @@ func (p UploadParams) validate() error {
 // legacy multipart upload. Array tags are handled separately by the caller.
 func (p UploadParams) formFields() map[string]string {
 	f := map[string]string{
-		"name":      p.Name,
+		fieldName:   p.Name,
 		"channelId": strconv.Itoa(p.ChannelID),
 	}
 	if p.Privacy != 0 {
@@ -75,7 +78,7 @@ func (p UploadParams) formFields() map[string]string {
 // resumable upload. filename is the required video filename (with extension).
 func (p UploadParams) jsonMap(filename string) map[string]any {
 	m := map[string]any{
-		"name":      p.Name,
+		fieldName:   p.Name,
 		"channelId": p.ChannelID,
 		"filename":  filename,
 	}

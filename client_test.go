@@ -57,11 +57,6 @@ func TestWithToken(t *testing.T) {
 	}
 }
 
-// roundTripFunc lets a plain function act as an http.RoundTripper / Doer.
-type roundTripFunc func(*http.Request) (*http.Response, error)
-
-func (f roundTripFunc) Do(r *http.Request) (*http.Response, error) { return f(r) }
-
 func TestWithHTTPClientNilKeepsDefault(t *testing.T) {
 	c, err := NewClient("https://x.example", WithHTTPClient(nil))
 	if err != nil {

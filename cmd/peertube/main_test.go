@@ -26,7 +26,8 @@ func TestMain(m *testing.M) {
 }
 
 func TestValidateMissingFlags(t *testing.T) {
-	err := options{}.validate()
+	o := options{}
+	err := o.validate()
 	if err == nil {
 		t.Fatal("expected error for empty options")
 	}
@@ -390,7 +391,8 @@ func TestChannelListCredentialsFromEnv(t *testing.T) {
 }
 
 func TestMissingCredentialsMentionEnv(t *testing.T) {
-	err := options{}.validate()
+	o := options{}
+	err := o.validate()
 	if err == nil {
 		t.Fatal("expected error")
 	}

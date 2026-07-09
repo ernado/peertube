@@ -36,9 +36,16 @@ type ResumableOptions struct {
 // the file in chunks, which lets large uploads survive transient failures.
 //
 // The total size must be known and video is read sequentially. If a chunk
-// fails, the server-side session is cancelled (best-effort) so it does not
+// fails, the server-side session is canceled (best-effort) so it does not
 // linger.
-func (c *Client) UploadResumable(ctx context.Context, params UploadParams, filename string, video io.Reader, size int64, opts ...ResumableOptions) (*UploadedVideo, error) {
+func (c *Client) UploadResumable(
+	ctx context.Context,
+	params UploadParams,
+	filename string,
+	video io.Reader,
+	size int64,
+	opts ...ResumableOptions,
+) (*UploadedVideo, error) {
 	if err := params.validate(); err != nil {
 		return nil, err
 	}
@@ -130,7 +137,7 @@ func (c *Client) sendChunks(ctx context.Context, uploadID string, video io.Reade
 
 	for offset < size {
 		n, err := io.ReadFull(video, buf[:min(chunkSize, size-offset)])
-		if err != nil && err != io.ErrUnexpectedEOF {
+		if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) {
 			return nil, errors.Wrap(err, "read chunk")
 		}
 		if n == 0 {
@@ -189,7 +196,7 @@ func (c *Client) sendChunk(ctx context.Context, uploadID string, chunk []byte, s
 
 // cancelResumable deletes an in-progress session (best-effort; errors ignored).
 func (c *Client) cancelResumable(ctx context.Context, uploadID string) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, c.resumableURL(uploadID), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, c.resumableURL(uploadID), http.NoBody)
 	if err != nil {
 		return
 	}

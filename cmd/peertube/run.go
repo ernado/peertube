@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -10,13 +11,14 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/ernado/peertube"
 	"github.com/schollz/progressbar/v3"
+
+	"github.com/ernado/peertube"
 )
 
 // execute logs in and uploads the video. Progress goes to logw (stderr) and the
 // final result to outw (stdout); both are injected so the flow is testable.
-func (o options) execute(ctx context.Context, outw, logw io.Writer) error {
+func (o *options) execute(ctx context.Context, outw, logw io.Writer) error {
 	f, err := os.Open(o.file)
 	if err != nil {
 		return fmt.Errorf("open video: %w", err)
@@ -51,9 +53,9 @@ func (o options) execute(ctx context.Context, outw, logw io.Writer) error {
 		Description:     o.description,
 		Support:         o.support,
 		Tags:            o.tags,
-		NSFW:            boolPtr(o.nsfw),
-		WaitTranscoding: boolPtr(o.waitTranscoding),
-		DownloadEnabled: boolPtr(o.downloadEnabled),
+		NSFW:            new(o.nsfw),
+		WaitTranscoding: new(o.waitTranscoding),
+		DownloadEnabled: new(o.downloadEnabled),
 	}
 	filename := filepath.Base(o.file)
 
@@ -93,7 +95,7 @@ func newUploadBar(size int64, w io.Writer) *progressbar.ProgressBar {
 }
 
 // login builds an authenticated client from the shared auth flags.
-func (o options) login(ctx context.Context, logw io.Writer) (*peertube.Client, error) {
+func (o *options) login(ctx context.Context, logw io.Writer) (*peertube.Client, error) {
 	client, err := peertube.NewClient(o.url)
 	if err != nil {
 		return nil, err
@@ -108,9 +110,9 @@ func (o options) login(ctx context.Context, logw io.Writer) (*peertube.Client, e
 // loginAndSave verifies the credentials against the instance and, on success,
 // persists them to the config file for reuse by other commands. Any username or
 // password still missing after flags/env/config is prompted for interactively.
-func (o options) loginAndSave(ctx context.Context, in io.Reader, logw io.Writer, makeDefault bool) error {
+func (o *options) loginAndSave(ctx context.Context, in io.Reader, logw io.Writer, makeDefault bool) error {
 	if o.url == "" {
-		return fmt.Errorf("missing required flag: --url")
+		return errors.New("missing required flag: --url")
 	}
 
 	p := newPrompter(in, logw)
@@ -154,7 +156,7 @@ func (o options) loginAndSave(ctx context.Context, in io.Reader, logw io.Writer,
 }
 
 // listChannels prints the authenticated user's video channels to outw.
-func (o options) listChannels(ctx context.Context, outw, logw io.Writer) error {
+func (o *options) listChannels(ctx context.Context, outw, logw io.Writer) error {
 	if err := o.validateAuth(); err != nil {
 		return err
 	}
@@ -191,7 +193,7 @@ type channelCreateFlags struct {
 
 // createChannel creates a new video channel and prints its id, optionally
 // uploading an avatar and/or banner afterwards.
-func (o options) createChannel(ctx context.Context, outw, logw io.Writer, p channelCreateFlags) error {
+func (o *options) createChannel(ctx context.Context, outw, logw io.Writer, p channelCreateFlags) error {
 	if err := o.validateAuth(); err != nil {
 		return err
 	}
@@ -241,7 +243,7 @@ type channelImageFlags struct {
 }
 
 // setChannelImage uploads an avatar or banner for an existing channel.
-func (o options) setChannelImage(ctx context.Context, outw, logw io.Writer, kind string, p channelImageFlags) error {
+func (o *options) setChannelImage(ctx context.Context, outw, logw io.Writer, kind string, p channelImageFlags) error {
 	if err := o.validateAuth(); err != nil {
 		return err
 	}
@@ -266,7 +268,7 @@ func (o options) setChannelImage(ctx context.Context, outw, logw io.Writer, kind
 // uploadChannelImage opens the image file and uploads it as the channel's
 // avatar or banner (kind is "avatar" or "banner").
 func uploadChannelImage(ctx context.Context, outw io.Writer, client *peertube.Client, kind, handle, path string) error {
-	f, err := os.Open(path)
+	f, err := os.Open(path) // #nosec G304 -- CLI intentionally opens the user-specified image file
 	if err != nil {
 		return fmt.Errorf("open %s: %w", kind, err)
 	}
@@ -297,7 +299,7 @@ func uploadChannelImage(ctx context.Context, outw io.Writer, client *peertube.Cl
 // resolveChannelID returns the channel to upload to. When --channel-id is set it
 // is used as-is; otherwise the user's channels are fetched: a single channel is
 // selected automatically, while multiple channels require an explicit choice.
-func (o options) resolveChannelID(ctx context.Context, client *peertube.Client, logw io.Writer) (int, error) {
+func (o *options) resolveChannelID(ctx context.Context, client *peertube.Client, logw io.Writer) (int, error) {
 	if o.channelID != 0 {
 		return o.channelID, nil
 	}
@@ -308,7 +310,7 @@ func (o options) resolveChannelID(ctx context.Context, client *peertube.Client, 
 	}
 	switch len(channels) {
 	case 0:
-		return 0, fmt.Errorf("account has no video channels; create one first")
+		return 0, errors.New("account has no video channels; create one first")
 	case 1:
 		ch := channels[0]
 		fmt.Fprintf(logw, "Auto-selected channel %d (%s)\n", ch.ID, channelLabel(ch))
@@ -329,5 +331,3 @@ func channelLabel(ch peertube.Channel) string {
 	}
 	return ch.Name
 }
-
-func boolPtr(b bool) *bool { return &b }

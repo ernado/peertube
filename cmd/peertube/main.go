@@ -23,12 +23,15 @@ import (
 )
 
 func main() {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
-	defer stop()
-
-	if err := newRootCmd().ExecuteContext(ctx); err != nil {
+	if err := run(); err != nil {
 		os.Exit(1)
 	}
+}
+
+func run() error {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+	return newRootCmd().ExecuteContext(ctx)
 }
 
 type options struct {
@@ -210,7 +213,7 @@ func newChannelImageCmd(o *options, kind, use, short string) *cobra.Command {
 }
 
 // missingAuth returns the required auth flags that are unset.
-func (o options) missingAuth() []string {
+func (o *options) missingAuth() []string {
 	var missing []string
 	if o.url == "" {
 		missing = append(missing, "--url")
@@ -225,7 +228,7 @@ func (o options) missingAuth() []string {
 }
 
 // validateAuth checks the flags needed to authenticate.
-func (o options) validateAuth() error {
+func (o *options) validateAuth() error {
 	if missing := o.missingAuth(); len(missing) > 0 {
 		return fmt.Errorf("missing required flags: %s", strings.Join(missing, ", "))
 	}
@@ -233,7 +236,7 @@ func (o options) validateAuth() error {
 }
 
 // validate checks the flags needed to upload a video.
-func (o options) validate() error {
+func (o *options) validate() error {
 	missing := o.missingAuth()
 	if o.file == "" {
 		missing = append(missing, "--file")

@@ -29,7 +29,7 @@ func (c *Client) MyChannels(ctx context.Context) ([]Channel, error) {
 		return nil, errors.New("not authenticated: call Login or WithToken first")
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.apiURL("users/me"), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.apiURL("users/me"), http.NoBody)
 	if err != nil {
 		return nil, errors.Wrap(err, "build request")
 	}
@@ -80,7 +80,7 @@ func (c *Client) CreateChannel(ctx context.Context, p CreateChannelParams) (Chan
 	}
 
 	body := map[string]any{
-		"name":        p.Name,
+		fieldName:     p.Name,
 		"displayName": p.DisplayName,
 	}
 	if p.Description != "" {

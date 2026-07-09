@@ -3,6 +3,7 @@ package peertube
 // Privacy is the visibility of a video (VideoPrivacySet in the API).
 type Privacy int
 
+// Video privacy levels.
 const (
 	PrivacyPublic            Privacy = 1
 	PrivacyUnlisted          Privacy = 2
@@ -14,6 +15,7 @@ const (
 // CommentsPolicy controls who may comment on a video (VideoCommentsPolicySet).
 type CommentsPolicy int
 
+// Comment policies.
 const (
 	CommentsEnabled         CommentsPolicy = 1
 	CommentsDisabled        CommentsPolicy = 2

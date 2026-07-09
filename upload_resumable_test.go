@@ -24,6 +24,7 @@ type resumableServer struct {
 }
 
 func (s *resumableServer) handler(t *testing.T) http.Handler {
+	t.Helper()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/videos/upload-resumable", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
@@ -140,7 +141,7 @@ func TestUploadResumableSingleChunk(t *testing.T) {
 }
 
 func TestUploadResumableChunkError(t *testing.T) {
-	var cancelled bool
+	var canceled bool
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/videos/upload-resumable", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
@@ -151,7 +152,7 @@ func TestUploadResumableChunkError(t *testing.T) {
 			io.Copy(io.Discard, r.Body)
 			w.WriteHeader(http.StatusConflict) // 409: chunk doesn't match range
 		case http.MethodDelete:
-			cancelled = true
+			canceled = true
 			w.WriteHeader(http.StatusNoContent)
 		}
 	})
@@ -166,8 +167,8 @@ func TestUploadResumableChunkError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	if !cancelled {
-		t.Error("expected session to be cancelled after failure")
+	if !canceled {
+		t.Error("expected session to be canceled after failure")
 	}
 }
 
