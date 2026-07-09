@@ -324,6 +324,49 @@ func TestChannelSetAvatarRequiresFlags(t *testing.T) {
 	}
 }
 
+func TestChannelRemove(t *testing.T) {
+	var deleteMethod, deletePath string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/oauth-clients/local", func(w http.ResponseWriter, _ *http.Request) {
+		io.WriteString(w, `{"client_id":"cid","client_secret":"csec"}`)
+	})
+	mux.HandleFunc("/api/v1/users/token", func(w http.ResponseWriter, _ *http.Request) {
+		io.WriteString(w, `{"access_token":"atok"}`)
+	})
+	mux.HandleFunc("/api/v1/video-channels/kellepourier", func(w http.ResponseWriter, r *http.Request) {
+		deleteMethod, deletePath = r.Method, r.URL.Path
+		w.WriteHeader(http.StatusNoContent)
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	auth := []string{"--url", srv.URL, "--username", "a", "--password", "b"}
+
+	// Dry run: nothing is deleted.
+	out, err := execViaCmd(t, append([]string{"channel", "remove", "kellepourier"}, auth...)...)
+	if err != nil {
+		t.Fatalf("dry run: %v\n%s", err, out)
+	}
+	if deleteMethod != "" {
+		t.Fatalf("dry run must not call DELETE, got %s", deleteMethod)
+	}
+	if !strings.Contains(out, "Would delete channel kellepourier") {
+		t.Errorf("expected dry-run message: %s", out)
+	}
+
+	// Confirmed: DELETE is issued to the right path.
+	out, err = execViaCmd(t, append([]string{"channel", "remove", "kellepourier", "--yes"}, auth...)...)
+	if err != nil {
+		t.Fatalf("remove: %v\n%s", err, out)
+	}
+	if deleteMethod != http.MethodDelete || deletePath != "/api/v1/video-channels/kellepourier" {
+		t.Fatalf("unexpected request: %s %s", deleteMethod, deletePath)
+	}
+	if !strings.Contains(out, "Deleted channel kellepourier") {
+		t.Errorf("expected deletion message: %s", out)
+	}
+}
+
 func TestChannelCreateRequiresNameAndDisplayName(t *testing.T) {
 	out, err := execViaCmd(t, "channel", "create",
 		"--url", "https://x.example", "--username", "alice", "--password", "pw",

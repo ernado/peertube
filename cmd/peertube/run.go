@@ -402,6 +402,33 @@ func (o *options) pruneChannel(ctx context.Context, outw, logw io.Writer, p chan
 	return nil
 }
 
+// removeChannel deletes a channel (and all its videos). It is a dry run unless
+// yes is set.
+func (o *options) removeChannel(ctx context.Context, outw, logw io.Writer, handle string, yes bool) error {
+	if err := o.validateAuth(); err != nil {
+		return err
+	}
+	if handle == "" {
+		return errors.New("channel handle is required")
+	}
+
+	client, err := o.login(ctx, logw)
+	if err != nil {
+		return err
+	}
+
+	if !yes {
+		fmt.Fprintf(outw, "Would delete channel %s and all its videos.\n", handle)
+		fmt.Fprintf(logw, "Dry run: re-run with --yes to delete.\n")
+		return nil
+	}
+	if err := client.DeleteChannel(ctx, handle); err != nil {
+		return fmt.Errorf("remove channel: %w", err)
+	}
+	fmt.Fprintf(outw, "Deleted channel %s.\n", handle)
+	return nil
+}
+
 // ageUnits maps human age suffixes to durations, longest suffix first so "mo"
 // is matched before a bare Go-duration parse would see "m" (minutes).
 var ageUnits = []struct {

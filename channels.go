@@ -131,6 +131,34 @@ func (c *Client) CreateChannel(ctx context.Context, p CreateChannelParams) (Chan
 	}, nil
 }
 
+// DeleteChannel deletes the video channel identified by handle
+// (DELETE /video-channels/{handle}). Deleting a channel also deletes its videos.
+func (c *Client) DeleteChannel(ctx context.Context, handle string) error {
+	if c.token == "" {
+		return errors.New("not authenticated: call Login or WithToken first")
+	}
+	if handle == "" {
+		return errors.New("channel handle is required")
+	}
+	endpoint := "video-channels/" + url.PathEscape(handle)
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, c.apiURL(endpoint), http.NoBody)
+	if err != nil {
+		return errors.Wrap(err, "build request")
+	}
+	req.Header.Set("Authorization", "Bearer "+c.token)
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return errors.Wrap(err, "do request")
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
+		return newAPIError(resp)
+	}
+	return nil
+}
+
 // ActorImage describes an uploaded avatar or banner image.
 type ActorImage struct {
 	// FileURL is the image URL (PeerTube >= 7.1).

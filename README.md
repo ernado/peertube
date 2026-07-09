@@ -143,6 +143,7 @@ Commands:
 | `peertube channel create` | Create a video channel (`--name`, `--display-name`, optional `--avatar`/`--banner`). |
 | `peertube channel set-avatar` / `set-banner` | Upload an avatar/banner image (`--channel`, `--file`). |
 | `peertube channel prune` | Delete old videos from a channel by age and/or count (dry-run unless `--yes`). |
+| `peertube channel remove <handle>` | Delete a whole channel and its videos (dry-run unless `--yes`). |
 
 ### Pruning
 

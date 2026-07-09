@@ -150,10 +150,13 @@ func newLoginCmd(o *options) *cobra.Command {
 	return cmd
 }
 
+// channel is the "channel" command group name and the shared --channel flag name.
+const channel = "channel"
+
 // newChannelCmd builds the "channel" command group.
 func newChannelCmd(o *options) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "channel",
+		Use:   channel,
 		Short: "Manage video channels",
 		Args:  cobra.NoArgs,
 	}
@@ -170,6 +173,24 @@ func newChannelCmd(o *options) *cobra.Command {
 	cmd.AddCommand(newChannelImageCmd(o, "avatar", "set-avatar", "Set a channel's avatar image (PNG or JPEG)"))
 	cmd.AddCommand(newChannelImageCmd(o, "banner", "set-banner", "Set a channel's banner image (PNG or JPEG)"))
 	cmd.AddCommand(newChannelPruneCmd(o))
+	cmd.AddCommand(newChannelRemoveCmd(o))
+	return cmd
+}
+
+// newChannelRemoveCmd builds the "channel remove" command.
+func newChannelRemoveCmd(o *options) *cobra.Command {
+	var yes bool
+	cmd := &cobra.Command{
+		Use:          "remove <handle>",
+		Aliases:      []string{"rm", "delete"},
+		Short:        "Delete a video channel (and all its videos)",
+		SilenceUsage: true,
+		Args:         cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return o.removeChannel(cmd.Context(), cmd.OutOrStdout(), cmd.ErrOrStderr(), args[0], yes)
+		},
+	}
+	cmd.Flags().BoolVar(&yes, "yes", false, "actually delete (without this it is a dry run)")
 	return cmd
 }
 
@@ -189,7 +210,7 @@ func newChannelPruneCmd(o *options) *cobra.Command {
 		},
 	}
 	f := cmd.Flags()
-	f.StringVarP(&p.handle, "channel", "c", "", "channel handle, e.g. my_channel (required)")
+	f.StringVarP(&p.handle, channel, "c", "", "channel handle, e.g. my_channel (required)")
 	f.StringVar(&p.olderThan, "older-than", "", "delete videos older than this age, e.g. 30d, 2w, 6mo, 1y")
 	f.IntVar(&p.keepLast, "keep-last", 0, "keep only the newest N videos, delete the rest")
 	f.BoolVar(&p.yes, "yes", false, "actually delete (without this it is a dry run)")
@@ -231,7 +252,7 @@ func newChannelImageCmd(o *options, kind, use, short string) *cobra.Command {
 		},
 	}
 	f := cmd.Flags()
-	f.StringVarP(&p.handle, "channel", "c", "", "channel handle, e.g. my_channel (required)")
+	f.StringVarP(&p.handle, channel, "c", "", "channel handle, e.g. my_channel (required)")
 	f.StringVarP(&p.file, "file", "f", "", "image file, PNG or JPEG (required)")
 	return cmd
 }

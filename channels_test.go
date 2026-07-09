@@ -98,6 +98,37 @@ func TestCreateChannelRequiresAuth(t *testing.T) {
 	}
 }
 
+func TestDeleteChannel(t *testing.T) {
+	var gotMethod, gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod, gotPath = r.Method, r.URL.Path
+		if r.Header.Get("Authorization") != "Bearer tok" {
+			t.Errorf("missing auth")
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	c := mustClient(t, srv.URL, WithToken("tok"))
+	if err := c.DeleteChannel(context.Background(), "my_channel"); err != nil {
+		t.Fatal(err)
+	}
+	if gotMethod != http.MethodDelete || gotPath != "/api/v1/video-channels/my_channel" {
+		t.Fatalf("unexpected request: %s %s", gotMethod, gotPath)
+	}
+}
+
+func TestDeleteChannelValidation(t *testing.T) {
+	c := mustClient(t, "https://x.example", WithToken("tok"))
+	if err := c.DeleteChannel(context.Background(), ""); err == nil {
+		t.Error("expected error for empty handle")
+	}
+	unauth := mustClient(t, "https://x.example")
+	if err := unauth.DeleteChannel(context.Background(), "h"); err == nil {
+		t.Error("expected auth error")
+	}
+}
+
 func TestSetChannelAvatar(t *testing.T) {
 	const img = "JPEGDATA"
 	var gotField, gotFilename, gotData, gotContentType string
