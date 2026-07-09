@@ -92,17 +92,18 @@ progress bar via [schollz/progressbar](https://github.com/schollz/progressbar).
 go install github.com/ernado/peertube/cmd/peertube@latest
 
 # Save credentials once (verified against the instance, stored in the config).
-peertube login --url https://peertube.example.org -U alice -p secret
+# Prompts for username/password if not passed via flags or environment.
+peertube login --url https://peertube.example.org
 
 # Then commands work without repeating credentials.
 peertube channel list
-peertube --file video.mp4 --name "My video" --tags go,peertube
+peertube upload --file video.mp4 --name "My video" --tags go,peertube
 ```
 
 Or pass everything inline (no login required):
 
 ```bash
-peertube \
+peertube upload \
   --url https://peertube.example.org \
   --username alice --password secret \
   --file video.mp4 --name "My video"
@@ -112,8 +113,8 @@ Commands:
 
 | Command | Purpose |
 |---------|---------|
-| `peertube [flags]` | Upload a video (root command). |
-| `peertube login` | Verify and persist credentials; `--default` sets the default instance. |
+| `peertube upload` | Upload a video. |
+| `peertube login` | Verify and persist credentials; prompts for missing username/password; `--default` sets the default instance. |
 | `peertube channel list` | List the authenticated user's channels. |
 
 Credential resolution, highest precedence first:
@@ -123,6 +124,8 @@ Credential resolution, highest precedence first:
 3. Saved config (`login`) — `os.UserConfigDir()/peertube/config.json`, written
    with `0600` since it holds the password. The default instance supplies `--url`
    when omitted.
+4. `login` additionally prompts on the terminal for any username/password still
+   missing (password input is hidden).
 
 Other notes:
 

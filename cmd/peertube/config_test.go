@@ -101,6 +101,47 @@ func TestSavedLoginUsedByChannelList(t *testing.T) {
 	}
 }
 
+func TestLoginPromptsForCredentials(t *testing.T) {
+	withTempConfig(t)
+	srv := mockServer(t, `[]`)
+	defer srv.Close()
+
+	// Only --url given; username and password are typed at the prompt.
+	out, err := execViaCmdStdin(t, "alice\npw\n", "login", "--url", srv.URL)
+	if err != nil {
+		t.Fatalf("login: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "PeerTube username:") || !strings.Contains(out, "PeerTube password:") {
+		t.Errorf("expected prompts in output: %s", out)
+	}
+
+	cfg, err := loadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	inst := cfg.Instances[srv.URL]
+	if inst.Username != "alice" || inst.Password != "pw" {
+		t.Fatalf("prompted credentials not persisted: %+v", cfg)
+	}
+}
+
+func TestLoginPromptsPasswordOnly(t *testing.T) {
+	withTempConfig(t)
+	srv := mockServer(t, `[]`)
+	defer srv.Close()
+
+	// Username via flag; only the password is prompted.
+	out, err := execViaCmdStdin(t, "secret\n", "login", "--url", srv.URL, "--username", "bob")
+	if err != nil {
+		t.Fatalf("login: %v\n%s", err, out)
+	}
+	cfg, _ := loadConfig()
+	inst := cfg.Instances[srv.URL]
+	if inst.Username != "bob" || inst.Password != "secret" {
+		t.Fatalf("unexpected persisted credentials: %+v", inst)
+	}
+}
+
 func TestLoginFailureNotPersisted(t *testing.T) {
 	path := withTempConfig(t)
 	srv := failingLoginServer(t)

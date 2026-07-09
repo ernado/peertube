@@ -44,10 +44,17 @@ func TestValidateMissingFlags(t *testing.T) {
 // execViaCmd builds the cobra command and runs it with the given args.
 func execViaCmd(t *testing.T, args ...string) (string, error) {
 	t.Helper()
+	return execViaCmdStdin(t, "", args...)
+}
+
+// execViaCmdStdin is execViaCmd with a canned stdin for interactive prompts.
+func execViaCmdStdin(t *testing.T, stdin string, args ...string) (string, error) {
+	t.Helper()
 	cmd := newRootCmd()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
+	cmd.SetIn(strings.NewReader(stdin))
 	cmd.SetArgs(args)
 	err := cmd.ExecuteContext(context.Background())
 	return out.String(), err
@@ -115,7 +122,7 @@ func TestRunWithExplicitChannel(t *testing.T) {
 	srv := mockServer(t, `[]`)
 	defer srv.Close()
 
-	out, err := execViaCmd(t,
+	out, err := execViaCmd(t, "upload",
 		"--url", srv.URL, "--username", "alice", "--password", "pw",
 		"--channel-id", "3", "--file", writeVideo(t), "--tags", "go,peertube",
 	)
@@ -131,7 +138,7 @@ func TestRunAutoDiscoverSingleChannel(t *testing.T) {
 	srv := mockServer(t, `[{"id":7,"name":"main","displayName":"Main"}]`)
 	defer srv.Close()
 
-	out, err := execViaCmd(t,
+	out, err := execViaCmd(t, "upload",
 		"--url", srv.URL, "--username", "alice", "--password", "pw",
 		"--file", writeVideo(t),
 	)
@@ -150,7 +157,7 @@ func TestRunAutoDiscoverMultipleChannelsFails(t *testing.T) {
 	srv := mockServer(t, `[{"id":7,"name":"a"},{"id":8,"name":"b"}]`)
 	defer srv.Close()
 
-	out, err := execViaCmd(t,
+	out, err := execViaCmd(t, "upload",
 		"--url", srv.URL, "--username", "alice", "--password", "pw",
 		"--file", writeVideo(t),
 	)
@@ -171,7 +178,7 @@ func TestRunAutoDiscoverNoChannelsFails(t *testing.T) {
 	srv := mockServer(t, `[]`)
 	defer srv.Close()
 
-	_, err := execViaCmd(t,
+	_, err := execViaCmd(t, "upload",
 		"--url", srv.URL, "--username", "alice", "--password", "pw",
 		"--file", writeVideo(t),
 	)
@@ -187,7 +194,7 @@ func TestCredentialsFromEnv(t *testing.T) {
 	// Neither --username nor --password given; both come from the environment.
 	t.Setenv("PEERTUBE_USER", "alice")
 	t.Setenv("PEERTUBE_PASSWORD", "envpw")
-	out, err := execViaCmd(t,
+	out, err := execViaCmd(t, "upload",
 		"--url", srv.URL,
 		"--channel-id", "3", "--file", writeVideo(t),
 	)

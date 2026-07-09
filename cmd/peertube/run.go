@@ -106,8 +106,29 @@ func (o options) login(ctx context.Context, logw io.Writer) (*peertube.Client, e
 }
 
 // loginAndSave verifies the credentials against the instance and, on success,
-// persists them to the config file for reuse by other commands.
-func (o options) loginAndSave(ctx context.Context, logw io.Writer, makeDefault bool) error {
+// persists them to the config file for reuse by other commands. Any username or
+// password still missing after flags/env/config is prompted for interactively.
+func (o options) loginAndSave(ctx context.Context, in io.Reader, logw io.Writer, makeDefault bool) error {
+	if o.url == "" {
+		return fmt.Errorf("missing required flag: --url")
+	}
+
+	p := newPrompter(in, logw)
+	if o.username == "" {
+		u, err := p.line("PeerTube username: ")
+		if err != nil {
+			return fmt.Errorf("read username: %w", err)
+		}
+		o.username = strings.TrimSpace(u)
+	}
+	if o.password == "" {
+		pw, err := p.password("PeerTube password: ")
+		if err != nil {
+			return fmt.Errorf("read password: %w", err)
+		}
+		o.password = pw
+	}
+
 	if err := o.validateAuth(); err != nil {
 		return err
 	}

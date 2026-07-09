@@ -1,17 +1,15 @@
-// Command peertube is a minimal CLI to log in to a PeerTube instance with a
-// username/password and upload a video, built on the github.com/ernado/peertube
-// library.
+// Command peertube is a minimal CLI to log in to a PeerTube instance and upload
+// videos, built on the github.com/ernado/peertube library.
 //
 // Usage:
 //
-//	peertube --url https://peertube.example.org \
-//	  --username alice --password secret \
-//	  --channel-id 3 --name "My video" --file video.mp4
+//	peertube login  --url https://peertube.example.org -U alice
+//	peertube upload --file video.mp4 --name "My video"
+//	peertube channel list
 //
-//	peertube channel list --url https://peertube.example.org -U alice -p secret
-//
-// The username and password may also be supplied via the PEERTUBE_USER and
-// PEERTUBE_PASSWORD environment variables to keep them out of the process list.
+// The username and password may be supplied via flags, the PEERTUBE_USER and
+// PEERTUBE_PASSWORD environment variables, or a prior "login" (which persists
+// them). The login command prompts interactively for any it is still missing.
 package main
 
 import (
@@ -62,27 +60,21 @@ type options struct {
 // newRootCmd builds the cobra command tree. It is a function (not a package var)
 // so tests can build a fresh command with isolated flag state.
 //
-// The root command itself uploads a video; shared authentication flags are
-// persistent so subcommands (e.g. "channel list") inherit them.
+// The root command is a parent that holds the shared authentication flags as
+// persistent flags; all work happens in subcommands (upload, login, channel).
 func newRootCmd() *cobra.Command {
 	var o options
 
 	cmd := &cobra.Command{
 		Use:          "peertube",
-		Short:        "Log in to a PeerTube instance and upload a video",
+		Short:        "Upload videos to a PeerTube instance",
 		SilenceUsage: true,
 		Args:         cobra.NoArgs,
-		// Applies to the root command and every subcommand: resolve credentials
-		// from flags, then environment, then the saved config.
+		// Applies to every subcommand: resolve credentials from flags, then
+		// environment, then the saved config.
 		PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
 			o.resolveCredentials()
 			return nil
-		},
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			if err := o.validate(); err != nil {
-				return err
-			}
-			return o.execute(cmd.Context(), cmd.OutOrStdout(), cmd.ErrOrStderr())
 		},
 	}
 
@@ -93,7 +85,28 @@ func newRootCmd() *cobra.Command {
 	pf.StringVarP(&o.password, "password", "p", "", "account password (or set PEERTUBE_PASSWORD)")
 	pf.StringVar(&o.otp, "otp", "", "two-factor authentication code, if enabled")
 
-	// Upload-specific flags, local to the root command.
+	cmd.AddCommand(newUploadCmd(&o))
+	cmd.AddCommand(newLoginCmd(&o))
+	cmd.AddCommand(newChannelCmd(&o))
+
+	return cmd
+}
+
+// newUploadCmd builds the "upload" command.
+func newUploadCmd(o *options) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:          "upload",
+		Short:        "Upload a video",
+		SilenceUsage: true,
+		Args:         cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if err := o.validate(); err != nil {
+				return err
+			}
+			return o.execute(cmd.Context(), cmd.OutOrStdout(), cmd.ErrOrStderr())
+		},
+	}
+
 	f := cmd.Flags()
 	f.StringVarP(&o.file, "file", "f", "", "path to the video file (required)")
 	f.StringVarP(&o.name, "name", "n", "", "video name (defaults to the file name)")
@@ -114,14 +127,11 @@ func newRootCmd() *cobra.Command {
 	f.BoolVar(&o.legacy, "legacy", false, "use the single-request upload instead of resumable")
 	f.Int64Var(&o.chunkSize, "chunk-size", 5<<20, "resumable chunk size in bytes (multiple of 1024)")
 
-	cmd.AddCommand(newLoginCmd(&o))
-	cmd.AddCommand(newChannelCmd(&o))
-
 	return cmd
 }
 
 // newLoginCmd builds the "login" command, which verifies and persists
-// credentials for a PeerTube instance.
+// credentials for a PeerTube instance, prompting for any missing interactively.
 func newLoginCmd(o *options) *cobra.Command {
 	var makeDefault bool
 	cmd := &cobra.Command{
@@ -130,7 +140,7 @@ func newLoginCmd(o *options) *cobra.Command {
 		SilenceUsage: true,
 		Args:         cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return o.loginAndSave(cmd.Context(), cmd.ErrOrStderr(), makeDefault)
+			return o.loginAndSave(cmd.Context(), cmd.InOrStdin(), cmd.ErrOrStderr(), makeDefault)
 		},
 	}
 	cmd.Flags().BoolVar(&makeDefault, "default", false, "set this instance as the default for other commands")
