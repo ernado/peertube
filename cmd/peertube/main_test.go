@@ -80,6 +80,14 @@ func mockServer(t *testing.T, channelsJSON string) *httptest.Server {
 		}
 		io.WriteString(w, `{"videoChannel":{"id":123}}`)
 	})
+	mux.HandleFunc("/api/v1/video-channels/my_channel/avatar/pick", func(w http.ResponseWriter, r *http.Request) {
+		io.Copy(io.Discard, r.Body)
+		io.WriteString(w, `{"avatars":[{"fileUrl":"https://h/a.png","width":48}]}`)
+	})
+	mux.HandleFunc("/api/v1/video-channels/my_channel/banner/pick", func(w http.ResponseWriter, r *http.Request) {
+		io.Copy(io.Discard, r.Body)
+		io.WriteString(w, `{"banners":[{"fileUrl":"https://h/b.png","width":1920}]}`)
+	})
 	mux.HandleFunc("/api/v1/videos/upload-resumable", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodPost:
@@ -117,11 +125,16 @@ func fileExists(path string) bool {
 
 func writeVideo(t *testing.T) string {
 	t.Helper()
-	video := filepath.Join(t.TempDir(), "clip.mp4")
-	if err := os.WriteFile(video, []byte("hello video"), 0o600); err != nil {
+	return writeTempFile(t, "clip.mp4", "hello video")
+}
+
+func writeTempFile(t *testing.T, name, content string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), name)
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	return video
+	return path
 }
 
 func TestRunWithExplicitChannel(t *testing.T) {
@@ -242,6 +255,71 @@ func TestChannelCreate(t *testing.T) {
 	}
 	if !strings.Contains(out, "id=123") || !strings.Contains(out, "my_channel") {
 		t.Errorf("expected created channel output: %s", out)
+	}
+}
+
+func TestChannelCreateWithImages(t *testing.T) {
+	srv := mockServer(t, `[]`)
+	defer srv.Close()
+
+	out, err := execViaCmd(t, "channel", "create",
+		"--url", srv.URL, "--username", "alice", "--password", "pw",
+		"--name", "my_channel", "--display-name", "My Channel",
+		"--avatar", writeTempFile(t, "a.png", "PNG"),
+		"--banner", writeTempFile(t, "b.png", "PNG"),
+	)
+	if err != nil {
+		t.Fatalf("channel create: %v\n%s", err, out)
+	}
+	for _, want := range []string{"Created channel", "Set avatar for my_channel", "Set banner for my_channel"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output should contain %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestChannelSetAvatar(t *testing.T) {
+	srv := mockServer(t, `[]`)
+	defer srv.Close()
+
+	out, err := execViaCmd(t, "channel", "set-avatar",
+		"--url", srv.URL, "--username", "alice", "--password", "pw",
+		"--channel", "my_channel", "--file", writeTempFile(t, "a.png", "PNG"),
+	)
+	if err != nil {
+		t.Fatalf("set-avatar: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "Set avatar for my_channel") || !strings.Contains(out, "https://h/a.png") {
+		t.Errorf("unexpected output: %s", out)
+	}
+}
+
+func TestChannelSetBanner(t *testing.T) {
+	srv := mockServer(t, `[]`)
+	defer srv.Close()
+
+	out, err := execViaCmd(t, "channel", "set-banner",
+		"--url", srv.URL, "--username", "alice", "--password", "pw",
+		"--channel", "my_channel", "--file", writeTempFile(t, "b.png", "PNG"),
+	)
+	if err != nil {
+		t.Fatalf("set-banner: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "Set banner for my_channel") {
+		t.Errorf("unexpected output: %s", out)
+	}
+}
+
+func TestChannelSetAvatarRequiresFlags(t *testing.T) {
+	out, err := execViaCmd(t, "channel", "set-avatar",
+		"--url", "https://x.example", "--username", "a", "--password", "b",
+		"--channel", "my_channel",
+	)
+	if err == nil {
+		t.Fatalf("expected error, out: %s", out)
+	}
+	if !strings.Contains(err.Error(), "--file") {
+		t.Errorf("error should mention --file: %v", err)
 	}
 }
 

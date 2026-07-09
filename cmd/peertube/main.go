@@ -164,6 +164,8 @@ func newChannelCmd(o *options) *cobra.Command {
 		},
 	})
 	cmd.AddCommand(newChannelCreateCmd(o))
+	cmd.AddCommand(newChannelImageCmd(o, "avatar", "set-avatar", "Set a channel's avatar image (PNG or JPEG)"))
+	cmd.AddCommand(newChannelImageCmd(o, "banner", "set-banner", "Set a channel's banner image (PNG or JPEG)"))
 	return cmd
 }
 
@@ -184,6 +186,26 @@ func newChannelCreateCmd(o *options) *cobra.Command {
 	f.StringVarP(&p.displayName, "display-name", "D", "", "channel display name (required)")
 	f.StringVarP(&p.description, "description", "d", "", "channel description")
 	f.StringVarP(&p.support, "support", "s", "", "how to support/fund the channel")
+	f.StringVar(&p.avatar, "avatar", "", "avatar image file to upload (PNG or JPEG)")
+	f.StringVar(&p.banner, "banner", "", "banner image file to upload (PNG or JPEG)")
+	return cmd
+}
+
+// newChannelImageCmd builds a "channel set-avatar" / "set-banner" command.
+func newChannelImageCmd(o *options, kind, use, short string) *cobra.Command {
+	var p channelImageFlags
+	cmd := &cobra.Command{
+		Use:          use,
+		Short:        short,
+		SilenceUsage: true,
+		Args:         cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return o.setChannelImage(cmd.Context(), cmd.OutOrStdout(), cmd.ErrOrStderr(), kind, p)
+		},
+	}
+	f := cmd.Flags()
+	f.StringVarP(&p.handle, "channel", "c", "", "channel handle, e.g. my_channel (required)")
+	f.StringVarP(&p.file, "file", "f", "", "image file, PNG or JPEG (required)")
 	return cmd
 }
 

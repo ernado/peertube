@@ -4,7 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
+	"mime/multipart"
 	"net/http"
+	"net/url"
 
 	"github.com/go-faster/errors"
 )
@@ -122,4 +125,89 @@ func (c *Client) CreateChannel(ctx context.Context, p CreateChannelParams) (Chan
 		Name:        p.Name,
 		DisplayName: p.DisplayName,
 	}, nil
+}
+
+// ActorImage describes an uploaded avatar or banner image.
+type ActorImage struct {
+	// FileURL is the image URL (PeerTube >= 7.1).
+	FileURL string `json:"fileUrl"`
+	// Path is the legacy image path (deprecated in favor of FileURL).
+	Path   string `json:"path"`
+	Width  int    `json:"width"`
+	Height int    `json:"height"`
+}
+
+// SetChannelAvatar uploads an avatar image (PNG or JPEG) for the channel with
+// the given handle (POST /video-channels/{handle}/avatar/pick). It returns the
+// generated avatar variants.
+func (c *Client) SetChannelAvatar(ctx context.Context, handle, filename string, image io.Reader) ([]ActorImage, error) {
+	return c.uploadChannelImage(ctx, handle, "avatar", "avatarfile", filename, image)
+}
+
+// SetChannelBanner uploads a banner image (PNG or JPEG) for the channel with
+// the given handle (POST /video-channels/{handle}/banner/pick). It returns the
+// generated banner variants.
+func (c *Client) SetChannelBanner(ctx context.Context, handle, filename string, image io.Reader) ([]ActorImage, error) {
+	return c.uploadChannelImage(ctx, handle, "banner", "bannerfile", filename, image)
+}
+
+// uploadChannelImage performs the shared single-file multipart upload used by
+// the avatar and banner endpoints. kind is the path segment ("avatar"/"banner")
+// and field is the multipart field name.
+func (c *Client) uploadChannelImage(ctx context.Context, handle, kind, field, filename string, image io.Reader) ([]ActorImage, error) {
+	if c.token == "" {
+		return nil, errors.New("not authenticated: call Login or WithToken first")
+	}
+	if handle == "" {
+		return nil, errors.New("channel handle is required")
+	}
+	if filename == "" {
+		return nil, errors.New("filename is required")
+	}
+
+	// Stream the multipart body through a pipe so the file is never fully
+	// buffered in memory.
+	pr, pw := io.Pipe()
+	mw := multipart.NewWriter(pw)
+	go func() {
+		part, err := mw.CreateFormFile(field, filename)
+		if err == nil {
+			_, err = io.Copy(part, image)
+		}
+		if cerr := mw.Close(); err == nil {
+			err = cerr
+		}
+		_ = pw.CloseWithError(err)
+	}()
+
+	path := "video-channels/" + url.PathEscape(handle) + "/" + kind + "/pick"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.apiURL(path), pr)
+	if err != nil {
+		return nil, errors.Wrap(err, "build request")
+	}
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, errors.Wrap(err, "do request")
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, newAPIError(resp)
+	}
+	// Only one of the two arrays is populated depending on the endpoint.
+	var out struct {
+		Avatars []ActorImage `json:"avatars"`
+		Banners []ActorImage `json:"banners"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, errors.Wrap(err, "decode response")
+	}
+	if out.Avatars != nil {
+		return out.Avatars, nil
+	}
+	return out.Banners, nil
 }

@@ -185,9 +185,12 @@ type channelCreateFlags struct {
 	displayName string
 	description string
 	support     string
+	avatar      string // optional image file
+	banner      string // optional image file
 }
 
-// createChannel creates a new video channel and prints its id.
+// createChannel creates a new video channel and prints its id, optionally
+// uploading an avatar and/or banner afterwards.
 func (o options) createChannel(ctx context.Context, outw, logw io.Writer, p channelCreateFlags) error {
 	if err := o.validateAuth(); err != nil {
 		return err
@@ -216,8 +219,78 @@ func (o options) createChannel(ctx context.Context, outw, logw io.Writer, p chan
 	if err != nil {
 		return fmt.Errorf("create channel: %w", err)
 	}
-
 	fmt.Fprintf(outw, "Created channel: id=%d name=%s\n", ch.ID, ch.Name)
+
+	if p.avatar != "" {
+		if err := uploadChannelImage(ctx, outw, client, "avatar", ch.Name, p.avatar); err != nil {
+			return err
+		}
+	}
+	if p.banner != "" {
+		if err := uploadChannelImage(ctx, outw, client, "banner", ch.Name, p.banner); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// channelImageFlags holds the "channel set-avatar"/"set-banner" command flags.
+type channelImageFlags struct {
+	handle string
+	file   string
+}
+
+// setChannelImage uploads an avatar or banner for an existing channel.
+func (o options) setChannelImage(ctx context.Context, outw, logw io.Writer, kind string, p channelImageFlags) error {
+	if err := o.validateAuth(); err != nil {
+		return err
+	}
+	if p.handle == "" || p.file == "" {
+		var missing []string
+		if p.handle == "" {
+			missing = append(missing, "--channel")
+		}
+		if p.file == "" {
+			missing = append(missing, "--file")
+		}
+		return fmt.Errorf("missing required flags: %s", strings.Join(missing, ", "))
+	}
+
+	client, err := o.login(ctx, logw)
+	if err != nil {
+		return err
+	}
+	return uploadChannelImage(ctx, outw, client, kind, p.handle, p.file)
+}
+
+// uploadChannelImage opens the image file and uploads it as the channel's
+// avatar or banner (kind is "avatar" or "banner").
+func uploadChannelImage(ctx context.Context, outw io.Writer, client *peertube.Client, kind, handle, path string) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("open %s: %w", kind, err)
+	}
+	defer func() { _ = f.Close() }()
+	filename := filepath.Base(path)
+
+	var imgs []peertube.ActorImage
+	switch kind {
+	case "avatar":
+		imgs, err = client.SetChannelAvatar(ctx, handle, filename, f)
+	case "banner":
+		imgs, err = client.SetChannelBanner(ctx, handle, filename, f)
+	default:
+		return fmt.Errorf("unknown image kind %q", kind)
+	}
+	if err != nil {
+		return fmt.Errorf("set %s: %w", kind, err)
+	}
+
+	if len(imgs) > 0 && imgs[0].FileURL != "" {
+		fmt.Fprintf(outw, "Set %s for %s: %s\n", kind, handle, imgs[0].FileURL)
+	} else {
+		fmt.Fprintf(outw, "Set %s for %s\n", kind, handle)
+	}
 	return nil
 }
 

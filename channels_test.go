@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -94,5 +95,85 @@ func TestCreateChannelRequiresAuth(t *testing.T) {
 	c := mustClient(t, "https://x.example")
 	if _, err := c.CreateChannel(context.Background(), CreateChannelParams{Name: "a", DisplayName: "b"}); err == nil {
 		t.Fatal("expected auth error")
+	}
+}
+
+func TestSetChannelAvatar(t *testing.T) {
+	const img = "PNGDATA"
+	var gotField, gotFilename, gotData string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/video-channels/my_channel/avatar/pick" {
+			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
+		}
+		mr, err := r.MultipartReader()
+		if err != nil {
+			t.Fatal(err)
+		}
+		part, err := mr.NextPart()
+		if err != nil {
+			t.Fatal(err)
+		}
+		gotField = part.FormName()
+		gotFilename = part.FileName()
+		data, _ := io.ReadAll(part)
+		gotData = string(data)
+		io.WriteString(w, `{"avatars":[{"fileUrl":"https://h/a.png","width":48,"height":48}]}`)
+	}))
+	defer srv.Close()
+
+	c := mustClient(t, srv.URL, WithToken("tok"))
+	imgs, err := c.SetChannelAvatar(context.Background(), "my_channel", "a.png", strings.NewReader(img))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotField != "avatarfile" || gotFilename != "a.png" || gotData != img {
+		t.Fatalf("unexpected part: field=%q file=%q data=%q", gotField, gotFilename, gotData)
+	}
+	if len(imgs) != 1 || imgs[0].FileURL != "https://h/a.png" || imgs[0].Width != 48 {
+		t.Fatalf("unexpected images: %+v", imgs)
+	}
+}
+
+func TestSetChannelBanner(t *testing.T) {
+	var gotField string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/video-channels/my_channel/banner/pick" {
+			t.Errorf("path = %q", r.URL.Path)
+		}
+		mr, _ := r.MultipartReader()
+		part, err := mr.NextPart()
+		if err != nil {
+			t.Fatal(err)
+		}
+		gotField = part.FormName()
+		io.Copy(io.Discard, part)
+		io.WriteString(w, `{"banners":[{"fileUrl":"https://h/b.png","width":1920}]}`)
+	}))
+	defer srv.Close()
+
+	c := mustClient(t, srv.URL, WithToken("tok"))
+	imgs, err := c.SetChannelBanner(context.Background(), "my_channel", "b.png", strings.NewReader("data"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotField != "bannerfile" {
+		t.Errorf("field = %q, want bannerfile", gotField)
+	}
+	if len(imgs) != 1 || imgs[0].Width != 1920 {
+		t.Fatalf("unexpected images: %+v", imgs)
+	}
+}
+
+func TestSetChannelAvatarValidation(t *testing.T) {
+	c := mustClient(t, "https://x.example", WithToken("tok"))
+	if _, err := c.SetChannelAvatar(context.Background(), "", "a.png", strings.NewReader("x")); err == nil {
+		t.Error("expected error for empty handle")
+	}
+	if _, err := c.SetChannelAvatar(context.Background(), "h", "", strings.NewReader("x")); err == nil {
+		t.Error("expected error for empty filename")
+	}
+	unauth := mustClient(t, "https://x.example")
+	if _, err := unauth.SetChannelAvatar(context.Background(), "h", "a.png", strings.NewReader("x")); err == nil {
+		t.Error("expected auth error")
 	}
 }
