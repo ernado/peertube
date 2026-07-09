@@ -169,6 +169,30 @@ func newChannelCmd(o *options) *cobra.Command {
 	cmd.AddCommand(newChannelCreateCmd(o))
 	cmd.AddCommand(newChannelImageCmd(o, "avatar", "set-avatar", "Set a channel's avatar image (PNG or JPEG)"))
 	cmd.AddCommand(newChannelImageCmd(o, "banner", "set-banner", "Set a channel's banner image (PNG or JPEG)"))
+	cmd.AddCommand(newChannelPruneCmd(o))
+	return cmd
+}
+
+// newChannelPruneCmd builds the "channel prune" command.
+func newChannelPruneCmd(o *options) *cobra.Command {
+	var p channelPruneFlags
+	cmd := &cobra.Command{
+		Use:   "prune",
+		Short: "Delete old videos from a channel",
+		Long: "Delete videos from a channel by age (--older-than) and/or by keeping only\n" +
+			"the newest N (--keep-last). The newest --keep-last videos are always kept.\n" +
+			"Runs as a dry run (lists what would be deleted) unless --yes is given.",
+		SilenceUsage: true,
+		Args:         cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return o.pruneChannel(cmd.Context(), cmd.OutOrStdout(), cmd.ErrOrStderr(), p)
+		},
+	}
+	f := cmd.Flags()
+	f.StringVarP(&p.handle, "channel", "c", "", "channel handle, e.g. my_channel (required)")
+	f.StringVar(&p.olderThan, "older-than", "", "delete videos older than this age, e.g. 30d, 2w, 6mo, 1y")
+	f.IntVar(&p.keepLast, "keep-last", 0, "keep only the newest N videos, delete the rest")
+	f.BoolVar(&p.yes, "yes", false, "actually delete (without this it is a dry run)")
 	return cmd
 }
 

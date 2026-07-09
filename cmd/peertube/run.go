@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -330,4 +331,113 @@ func channelLabel(ch peertube.Channel) string {
 		return fmt.Sprintf("%s — %s", ch.Name, ch.DisplayName)
 	}
 	return ch.Name
+}
+
+// channelPruneFlags holds the "channel prune" command flags.
+type channelPruneFlags struct {
+	handle    string
+	olderThan string
+	keepLast  int
+	yes       bool
+}
+
+// pruneChannel lists a channel's videos, selects which to prune per the flags,
+// and either prints the plan (dry run) or deletes them (with --yes).
+func (o *options) pruneChannel(ctx context.Context, outw, logw io.Writer, p channelPruneFlags) error {
+	if err := o.validateAuth(); err != nil {
+		return err
+	}
+	if p.handle == "" {
+		return errors.New("missing required flag: --channel")
+	}
+
+	opts := peertube.PruneOptions{KeepLast: p.keepLast}
+	if p.olderThan != "" {
+		d, err := parseAge(p.olderThan)
+		if err != nil {
+			return err
+		}
+		opts.OlderThan = d
+	}
+	if opts.OlderThan == 0 && opts.KeepLast == 0 {
+		return errors.New("specify at least one of --older-than or --keep-last")
+	}
+
+	client, err := o.login(ctx, logw)
+	if err != nil {
+		return err
+	}
+	videos, err := client.ChannelVideos(ctx, p.handle)
+	if err != nil {
+		return fmt.Errorf("list videos: %w", err)
+	}
+
+	prune := peertube.SelectPrunable(videos, opts, time.Now())
+	if len(prune) == 0 {
+		fmt.Fprintf(logw, "Nothing to prune (%d videos in channel %s).\n", len(videos), p.handle)
+		return nil
+	}
+
+	fmt.Fprintf(logw, "Channel %s: %d videos, %d selected for pruning:\n", p.handle, len(videos), len(prune))
+	for _, v := range prune {
+		fmt.Fprintf(outw, "  %s  %s  %q\n", v.UUID, v.PublishedAt.Format("2006-01-02"), v.Name)
+	}
+
+	if !p.yes {
+		fmt.Fprintf(logw, "Dry run: re-run with --yes to delete these %d videos.\n", len(prune))
+		return nil
+	}
+
+	var failed int
+	for _, v := range prune {
+		if err := client.DeleteVideo(ctx, v.ID); err != nil {
+			fmt.Fprintf(logw, "  failed to delete %s (%q): %v\n", v.UUID, v.Name, err)
+			failed++
+		}
+	}
+	fmt.Fprintf(logw, "Deleted %d/%d videos.\n", len(prune)-failed, len(prune))
+	if failed > 0 {
+		return fmt.Errorf("%d of %d deletions failed", failed, len(prune))
+	}
+	return nil
+}
+
+// ageUnits maps human age suffixes to durations, longest suffix first so "mo"
+// is matched before a bare Go-duration parse would see "m" (minutes).
+var ageUnits = []struct {
+	suffix string
+	unit   time.Duration
+}{
+	{"mo", 30 * 24 * time.Hour},
+	{"y", 365 * 24 * time.Hour},
+	{"w", 7 * 24 * time.Hour},
+	{"d", 24 * time.Hour},
+}
+
+// parseAge parses an age like "30d", "2w", "6mo", "1y", or any Go duration
+// (e.g. "48h"). Month and year units are approximate (30 and 365 days).
+func parseAge(s string) (time.Duration, error) {
+	s = strings.TrimSpace(strings.ToLower(s))
+	if s == "" {
+		return 0, errors.New("empty age")
+	}
+	for _, u := range ageUnits {
+		num, ok := strings.CutSuffix(s, u.suffix)
+		if !ok {
+			continue
+		}
+		n, err := strconv.ParseFloat(strings.TrimSpace(num), 64)
+		if err != nil {
+			return 0, fmt.Errorf("invalid age %q (use e.g. 30d, 2w, 6mo, 1y)", s)
+		}
+		if n < 0 {
+			return 0, fmt.Errorf("age %q must not be negative", s)
+		}
+		return time.Duration(n * float64(u.unit)), nil
+	}
+	d, err := time.ParseDuration(s)
+	if err != nil {
+		return 0, fmt.Errorf("invalid age %q (use e.g. 30d, 2w, 6mo, 1y)", s)
+	}
+	return d, nil
 }

@@ -142,6 +142,28 @@ Commands:
 | `peertube channel list` | List the authenticated user's channels. |
 | `peertube channel create` | Create a video channel (`--name`, `--display-name`, optional `--avatar`/`--banner`). |
 | `peertube channel set-avatar` / `set-banner` | Upload an avatar/banner image (`--channel`, `--file`). |
+| `peertube channel prune` | Delete old videos from a channel by age and/or count (dry-run unless `--yes`). |
+
+### Pruning
+
+`channel prune` deletes videos from a channel by two combinable criteria:
+
+- `--older-than <age>` — delete videos published before the cutoff. Age accepts
+  `30d`, `2w`, `6mo`, `1y`, or any Go duration like `48h` (`mo`/`y` are
+  approximate: 30/365 days).
+- `--keep-last <N>` — always keep the newest N videos, delete the rest.
+
+With both, the newest N are kept and, among the rest, those older than the age
+are deleted. It's a **dry run by default** (lists what would be deleted); pass
+`--yes` to actually delete.
+
+```bash
+# Preview: keep the 10 newest, drop the rest.
+peertube channel prune -c my_channel --keep-last 10
+
+# Delete everything older than 6 months, but always keep at least 5.
+peertube channel prune -c my_channel --older-than 6mo --keep-last 5 --yes
+```
 
 Credential resolution, highest precedence first:
 
