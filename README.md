@@ -4,13 +4,19 @@ A small, focused Go client for **uploading videos** to a [PeerTube](https://join
 instance, plus a matching CLI. Built against the PeerTube 8.1 OpenAPI spec
 (`openapi.json`).
 
-It deliberately implements only what's needed to publish a video:
+It deliberately implements only what's needed to publish a video and manage the
+channel it lives in:
 
-- OAuth2 password-grant login (`/api/v1/users/token`).
+- OAuth2 password-grant login, token refresh, and 2FA/OTP (`/api/v1/users/token`).
 - Legacy single-request upload (`POST /api/v1/videos/upload`).
 - Resumable chunked upload (`POST/PUT /api/v1/videos/upload-resumable`),
   following the [node-uploadx](https://github.com/kukhariev/node-uploadx/blob/master/proto.md)
   protocol PeerTube uses.
+- Channel management: list, create, and set avatar/banner images.
+
+```bash
+go get github.com/ernado/peertube
+```
 
 ## Library
 
@@ -61,6 +67,24 @@ For small files there is also `Upload` (single multipart request):
 
 ```go
 res, err := c.Upload(ctx, params, "video.mp4", f)
+```
+
+### Channels
+
+```go
+// Discover channels (useful to find a ChannelID for uploads).
+channels, err := c.MyChannels(ctx)
+
+// Create a channel.
+ch, err := c.CreateChannel(ctx, peertube.CreateChannelParams{
+	Name:        "my_channel", // immutable handle
+	DisplayName: "My Channel",
+})
+
+// Set its avatar / banner (PNG or JPEG).
+avatar, _ := os.Open("avatar.png")
+defer avatar.Close()
+_, err = c.SetChannelAvatar(ctx, ch.Name, "avatar.png", avatar)
 ```
 
 ### Testability
