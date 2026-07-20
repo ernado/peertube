@@ -10,6 +10,9 @@ import (
 	"strings"
 	"sync"
 	"text/tabwriter"
+	"time"
+
+	"github.com/schollz/progressbar/v3"
 
 	"github.com/ernado/peertube"
 )
@@ -150,6 +153,8 @@ func collectSizedVideos(
 		return nil, nil
 	}
 
+	// One request per video, so show progress: this is the slow part.
+	bar := newSizeBar(len(all), logw)
 	var (
 		wg   sync.WaitGroup
 		sem  = make(chan struct{}, concurrency)
@@ -165,6 +170,7 @@ func collectSizedVideos(
 			if ctx.Err() != nil {
 				return
 			}
+			defer func() { _ = bar.Add(1) }() // ProgressBar.Add is goroutine-safe
 			size, err := client.VideoSize(ctx, all[i].ID)
 			if err != nil {
 				mu.Lock()
@@ -176,6 +182,7 @@ func collectSizedVideos(
 		}(i)
 	}
 	wg.Wait()
+	_ = bar.Finish()
 
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -196,6 +203,19 @@ func collectSizedVideos(
 		return all[i].PublishedAt.After(all[j].PublishedAt)
 	})
 	return all, nil
+}
+
+// newSizeBar builds an item-oriented progress bar for the size lookups,
+// rendering to w. It counts videos measured, not bytes.
+func newSizeBar(count int, w io.Writer) *progressbar.ProgressBar {
+	return progressbar.NewOptions(count,
+		progressbar.OptionSetWriter(w),
+		progressbar.OptionSetDescription("measuring"),
+		progressbar.OptionShowCount(),
+		progressbar.OptionSetWidth(30),
+		progressbar.OptionThrottle(100*time.Millisecond),
+		progressbar.OptionClearOnFinish(),
+	)
 }
 
 // sizeUnits maps human size suffixes to byte multipliers, longest suffix first
