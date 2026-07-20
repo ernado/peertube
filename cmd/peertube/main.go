@@ -39,6 +39,11 @@ type options struct {
 	username string
 	password string
 	otp      string
+	relogin  bool
+
+	// token is the cached OAuth token for url, loaded from the config by
+	// resolveCredentials and refreshed in place by login.
+	token *savedToken
 
 	file      string
 	name      string
@@ -87,6 +92,7 @@ func newRootCmd() *cobra.Command {
 	pf.StringVarP(&o.username, "username", "U", "", "account username (or set PEERTUBE_USER)")
 	pf.StringVarP(&o.password, "password", "p", "", "account password (or set PEERTUBE_PASSWORD)")
 	pf.StringVar(&o.otp, "otp", "", "two-factor authentication code, if enabled")
+	pf.BoolVar(&o.relogin, "relogin", false, "ignore the cached OAuth token and log in again")
 
 	cmd.AddCommand(newUploadCmd(&o))
 	cmd.AddCommand(newLoginCmd(&o))
@@ -180,8 +186,13 @@ func newLoginCmd(o *options) *cobra.Command {
 	return cmd
 }
 
-// channel is the "channel" command group name and the shared --channel flag name.
-const channel = "channel"
+// Command and flag names shared between the command tree and its tests.
+const (
+	// channel is the "channel" command group name and the --channel flag name.
+	channel = "channel"
+	// list is the "channel list" subcommand name.
+	list = "list"
+)
 
 // newChannelCmd builds the "channel" command group.
 func newChannelCmd(o *options) *cobra.Command {
@@ -191,7 +202,7 @@ func newChannelCmd(o *options) *cobra.Command {
 		Args:  cobra.NoArgs,
 	}
 	cmd.AddCommand(&cobra.Command{
-		Use:          "list",
+		Use:          list,
 		Short:        "List the authenticated user's video channels",
 		SilenceUsage: true,
 		Args:         cobra.NoArgs,

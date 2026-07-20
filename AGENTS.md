@@ -37,7 +37,7 @@ CLI (package `main`, `cmd/peertube/`):
 | `main.go` | cobra command tree, flag wiring, `options`, validation |
 | `run.go` | Command implementations (upload, channel ops, login) |
 | `prune.go` | Global `prune` command: size collection, `parseSize`/`formatSize` |
-| `config.go` | Persisted credentials (`os.UserConfigDir()/peertube/config.json`) |
+| `config.go` | Persisted credentials + cached OAuth token (`os.UserConfigDir()/peertube/config.json`) |
 | `prompt.go` | Interactive username/password prompts (hidden input via `x/term`) |
 
 Commands: `peertube upload`, `login`, `prune`,
@@ -59,6 +59,10 @@ Commands: `peertube upload`, `login`, `prune`,
   `errors.As`.
 - **Optional fields**: pointer bools (`*bool`) distinguish unset from explicit
   false; zero-valued scalars are omitted from requests.
+- **Auth reuse**: `(*options).login` prefers the cached access token, then the
+  refresh grant, then the password grant, caching whatever it obtains. Anything
+  that must verify credentials (like the `login` command) sets `o.relogin`
+  first, or it will silently accept a token from an earlier session.
 - Match the surrounding style; keep comments at the existing density.
 
 ## Commands

@@ -204,6 +204,24 @@ Credential resolution, highest precedence first:
 4. `login` additionally prompts on the terminal for any username/password still
    missing (password input is hidden).
 
+### Token caching
+
+Commands do not re-run the password grant every time. The OAuth token pair is
+cached in the same config file and reused in this order:
+
+1. The cached access token, while it is still valid — no auth request at all.
+2. Otherwise the refresh token, exchanged for a new pair (the password is never
+   sent).
+3. Otherwise a full login.
+
+Each new token is cached in turn. Tokens are treated as expired a minute early
+so one does not die mid-request, and a token the instance reports no lifetime
+for is not cached at all.
+
+A token revoked server-side still looks valid locally, so it surfaces as a
+`401` on the request itself; `--relogin` ignores the cache and logs in again.
+`login` always verifies the credentials it saves, cache or not.
+
 Other notes:
 
 - **Channel auto-discovery**: omit `--channel-id` and the CLI picks your channel

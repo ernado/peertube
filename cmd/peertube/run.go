@@ -95,17 +95,67 @@ func newUploadBar(size int64, w io.Writer) *progressbar.ProgressBar {
 	)
 }
 
-// login builds an authenticated client from the shared auth flags.
+// login builds an authenticated client, reusing the cached OAuth token when it
+// is still valid so repeated commands do not re-run the password grant. In
+// order of preference: the cached access token, a refresh-token exchange, then
+// a full login. A newly obtained token is cached for the next invocation.
 func (o *options) login(ctx context.Context, logw io.Writer) (*peertube.Client, error) {
 	client, err := peertube.NewClient(o.url)
 	if err != nil {
 		return nil, err
 	}
+	now := time.Now()
+
+	// Fast path: a cached access token that has not expired. Nothing is sent
+	// to the instance here; a token revoked server-side surfaces as a 401 on
+	// the actual request, and --relogin forces a fresh grant.
+	if !o.relogin && o.token.accessUsable(now) {
+		client.SetToken(o.token.AccessToken)
+		return client, nil
+	}
+
+	// The access token is gone or stale, but the refresh token may still be
+	// redeemable, which avoids sending the password.
+	if !o.relogin && o.token.refreshUsable(now) {
+		oc := peertube.OAuthClient{ClientID: o.token.ClientID, ClientSecret: o.token.ClientSecret}
+		tok, err := client.Refresh(ctx, oc, o.token.RefreshToken)
+		if err == nil {
+			o.cacheToken(tok, oc, logw)
+			return client, nil
+		}
+		fmt.Fprintf(logw, "Token refresh failed (%v); logging in again.\n", err)
+	}
+
+	if err := o.validateAuth(); err != nil {
+		return nil, err
+	}
 	fmt.Fprintf(logw, "Logging in to %s as %s...\n", o.url, o.username)
-	if _, err := client.Login(ctx, o.username, o.password, peertube.LoginOptions{OTP: o.otp}); err != nil {
+	// Fetch the OAuth client explicitly so it can be cached alongside the
+	// token; Login would otherwise fetch and discard it.
+	oc, err := client.OAuthClient(ctx)
+	if err != nil {
 		return nil, fmt.Errorf("login: %w", err)
 	}
+	tok, err := client.Login(ctx, o.username, o.password, peertube.LoginOptions{OTP: o.otp, Client: &oc})
+	if err != nil {
+		return nil, fmt.Errorf("login: %w", err)
+	}
+	o.cacheToken(tok, oc, logw)
 	return client, nil
+}
+
+// cacheToken persists a freshly issued token for reuse by later commands and
+// updates the in-memory copy. Failure to write only costs a future re-login, so
+// it is reported to logw rather than aborting the command in progress.
+func (o *options) cacheToken(tok peertube.Token, oc peertube.OAuthClient, logw io.Writer) {
+	st := newSavedToken(tok, oc, time.Now())
+	o.token = st
+	// A nil st means the token has no usable lifetime. Still write it through,
+	// to clear any stale token already on disk rather than leave a dead one to
+	// be retried by every later command.
+	if err := storeToken(o.url, st); err != nil {
+		fmt.Fprintf(logw, "Warning: could not cache token: %v\n", err)
+	}
 }
 
 // loginAndSave verifies the credentials against the instance and, on success,
@@ -135,6 +185,9 @@ func (o *options) loginAndSave(ctx context.Context, in io.Reader, logw io.Writer
 	if err := o.validateAuth(); err != nil {
 		return err
 	}
+	// login verifies the credentials being saved, so it must run the password
+	// grant rather than accept a token cached from an earlier session.
+	o.relogin = true
 	if _, err := o.login(ctx, logw); err != nil {
 		return err
 	}
