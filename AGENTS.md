@@ -24,6 +24,8 @@ Library (package `peertube`, repo root):
 | `upload.go` | Legacy single-request multipart upload |
 | `upload_resumable.go` | Resumable chunked upload (node-uploadx protocol) |
 | `params.go` | `UploadParams` validation + form/JSON serialization |
+| `videos.go` | `ChannelVideos`, `DeleteVideo`, per-channel `SelectPrunable` |
+| `prune.go` | `VideoSize`, `SizedVideo`, size-budget `SelectToFit` (global prune) |
 | `types.go` | Enums (`Privacy`, `CommentsPolicy`), shared types |
 | `errors.go` | `APIError` (HTTP status + PeerTube error code) |
 | `doc.go` | Package doc |
@@ -34,10 +36,12 @@ CLI (package `main`, `cmd/peertube/`):
 |------|----------------|
 | `main.go` | cobra command tree, flag wiring, `options`, validation |
 | `run.go` | Command implementations (upload, channel ops, login) |
+| `prune.go` | Global `prune` command: size collection, `parseSize`/`formatSize` |
 | `config.go` | Persisted credentials (`os.UserConfigDir()/peertube/config.json`) |
 | `prompt.go` | Interactive username/password prompts (hidden input via `x/term`) |
 
-Commands: `peertube upload`, `login`, `channel list|create|set-avatar|set-banner`.
+Commands: `peertube upload`, `login`, `prune`,
+`channel list|create|set-avatar|set-banner|prune|remove`.
 
 ## Conventions
 

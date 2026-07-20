@@ -91,7 +91,37 @@ func newRootCmd() *cobra.Command {
 	cmd.AddCommand(newUploadCmd(&o))
 	cmd.AddCommand(newLoginCmd(&o))
 	cmd.AddCommand(newChannelCmd(&o))
+	cmd.AddCommand(newPruneCmd(&o))
 
+	return cmd
+}
+
+// newPruneCmd builds the top-level "prune" command, which trims videos across
+// all of the user's channels down to a storage budget.
+func newPruneCmd(o *options) *cobra.Command {
+	var p globalPruneFlags
+	cmd := &cobra.Command{
+		Use:   "prune",
+		Short: "Delete videos across all channels until storage fits a budget",
+		Long: "Measure the storage used by every video in all of the authenticated user's\n" +
+			"channels and delete videos until the total fits within --max-size.\n\n" +
+			"Channels are balanced against each other: each deletion takes the oldest\n" +
+			"video from whichever channel currently occupies the most bytes, so large\n" +
+			"channels shrink first and small ones are left alone. Use --keep-per-channel\n" +
+			"to protect the newest N videos of every channel.\n\n" +
+			"Sizes are not exposed by the listing API, so this issues one request per\n" +
+			"video. Runs as a dry run (lists what would be deleted) unless --yes.",
+		SilenceUsage: true,
+		Args:         cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return o.pruneAll(cmd.Context(), cmd.OutOrStdout(), cmd.ErrOrStderr(), p)
+		},
+	}
+	f := cmd.Flags()
+	f.StringVar(&p.maxSize, "max-size", "", "storage budget to fit into, e.g. 100gb (required)")
+	f.IntVar(&p.keepPerChannel, "keep-per-channel", 0, "always keep the newest N videos of each channel")
+	f.IntVar(&p.concurrency, "concurrency", sizeCollectConcurrency, "parallel size lookups")
+	f.BoolVar(&p.yes, "yes", false, "actually delete (without this it is a dry run)")
 	return cmd
 }
 

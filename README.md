@@ -144,8 +144,36 @@ Commands:
 | `peertube channel set-avatar` / `set-banner` | Upload an avatar/banner image (`--channel`, `--file`). |
 | `peertube channel prune` | Delete old videos from a channel by age and/or count (dry-run unless `--yes`). |
 | `peertube channel remove <handle>` | Delete a whole channel and its videos (dry-run unless `--yes`). |
+| `peertube prune` | Delete videos across **all** channels until storage fits `--max-size` (dry-run unless `--yes`). |
 
-### Pruning
+### Pruning to a storage budget
+
+`peertube prune` is the global, size-driven counterpart to `channel prune`: it
+measures every video in all of your channels and deletes until the total fits
+within `--max-size` (`100gb`, `1.5tb`, `512mb`, or a bare byte count; units are
+binary).
+
+Channels are **balanced against each other** — each deletion takes the oldest
+video from whichever channel currently occupies the most bytes. Large channels
+shrink first and small ones are left alone, instead of any single channel being
+emptied. `--keep-per-channel N` protects the newest N videos of every channel;
+if that protection makes the budget unreachable, the command reports the
+shortfall rather than deleting protected videos.
+
+```bash
+# Preview what it takes to get under 100 GB.
+peertube prune --max-size 100gb
+
+# Enforce it, but never leave a channel with fewer than 5 videos.
+peertube prune --max-size 100gb --keep-per-channel 5 --yes
+```
+
+Sizes are not exposed by PeerTube's listing endpoints, so this issues one
+`GET /videos/{id}` per video (`--concurrency`, default 8, bounds the parallel
+lookups). If any size cannot be read the command refuses to prune rather than
+treat that video as occupying zero bytes.
+
+### Pruning a single channel
 
 `channel prune` deletes videos from a channel by two combinable criteria:
 
