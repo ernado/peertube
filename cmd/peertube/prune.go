@@ -108,21 +108,19 @@ func (o *options) pruneAll(ctx context.Context, outw, logw io.Writer, p globalPr
 		return nil
 	}
 
-	var failed int
-	var deleted int64
+	items := make([]deletable, 0, len(prune))
 	for i := range prune {
 		v := &prune[i]
-		if err := client.DeleteVideo(ctx, v.ID); err != nil {
-			fmt.Fprintf(logw, "  failed to delete %s (%q): %v\n", v.UUID, v.Name, err)
-			failed++
-			continue
-		}
-		deleted += v.Size
+		items = append(items, deletable{ID: v.ID, UUID: v.UUID, Name: v.Name, Size: v.Size})
+	}
+	deleted, errs := deleteVideos(ctx, client, items, logw)
+	for _, err := range errs {
+		fmt.Fprintf(logw, "  failed to %v\n", err)
 	}
 	fmt.Fprintf(logw, "Deleted %d/%d videos, freeing %s (now %s).\n",
-		len(prune)-failed, len(prune), formatSize(deleted), formatSize(total-deleted))
-	if failed > 0 {
-		return fmt.Errorf("%d of %d deletions failed", failed, len(prune))
+		len(items)-len(errs), len(items), formatSize(deleted), formatSize(total-deleted))
+	if len(errs) > 0 {
+		return fmt.Errorf("%d of %d deletions failed", len(errs), len(items))
 	}
 	return nil
 }
@@ -154,7 +152,7 @@ func collectSizedVideos(
 	}
 
 	// One request per video, so show progress: this is the slow part.
-	bar := newSizeBar(len(all), logw)
+	bar := newItemBar(len(all), "measuring", logw)
 	var (
 		wg   sync.WaitGroup
 		sem  = make(chan struct{}, concurrency)
@@ -205,17 +203,60 @@ func collectSizedVideos(
 	return all, nil
 }
 
-// newSizeBar builds an item-oriented progress bar for the size lookups,
-// rendering to w. It counts videos measured, not bytes.
-func newSizeBar(count int, w io.Writer) *progressbar.ProgressBar {
+// newItemBar builds an item-oriented progress bar rendering to w. It counts
+// videos processed, not bytes, unlike the upload bar.
+func newItemBar(count int, description string, w io.Writer) *progressbar.ProgressBar {
 	return progressbar.NewOptions(count,
 		progressbar.OptionSetWriter(w),
-		progressbar.OptionSetDescription("measuring"),
+		progressbar.OptionSetDescription(description),
 		progressbar.OptionShowCount(),
 		progressbar.OptionSetWidth(30),
 		progressbar.OptionThrottle(100*time.Millisecond),
 		progressbar.OptionClearOnFinish(),
 	)
+}
+
+// deletable identifies a video to delete, independent of how it was selected,
+// so both prune commands share one deletion loop.
+type deletable struct {
+	ID   int
+	UUID string
+	Name string
+	Size int64 // bytes reclaimed on success; zero when the size is unknown
+}
+
+// deleteVideos deletes each video in turn, advancing a progress bar, and
+// returns the bytes freed plus one error per failed deletion. Errors are
+// returned rather than printed so the caller can report them after the bar has
+// finished, where a redraw cannot overwrite them. A canceled context stops the
+// loop instead of failing every remaining video.
+func deleteVideos(
+	ctx context.Context,
+	client *peertube.Client,
+	videos []deletable,
+	logw io.Writer,
+) (int64, []error) {
+	bar := newItemBar(len(videos), "deleting", logw)
+	defer func() { _ = bar.Finish() }()
+
+	var (
+		freed int64
+		errs  []error
+	)
+	for i := range videos {
+		if err := ctx.Err(); err != nil {
+			errs = append(errs, err)
+			return freed, errs
+		}
+		v := &videos[i]
+		if err := client.DeleteVideo(ctx, v.ID); err != nil {
+			errs = append(errs, fmt.Errorf("delete %s (%q): %w", v.UUID, v.Name, err))
+		} else {
+			freed += v.Size
+		}
+		_ = bar.Add(1)
+	}
+	return freed, errs
 }
 
 // sizeUnits maps human size suffixes to byte multipliers, longest suffix first

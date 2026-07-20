@@ -441,16 +441,17 @@ func (o *options) pruneChannel(ctx context.Context, outw, logw io.Writer, p chan
 		return nil
 	}
 
-	var failed int
+	items := make([]deletable, 0, len(prune))
 	for _, v := range prune {
-		if err := client.DeleteVideo(ctx, v.ID); err != nil {
-			fmt.Fprintf(logw, "  failed to delete %s (%q): %v\n", v.UUID, v.Name, err)
-			failed++
-		}
+		items = append(items, deletable{ID: v.ID, UUID: v.UUID, Name: v.Name})
 	}
-	fmt.Fprintf(logw, "Deleted %d/%d videos.\n", len(prune)-failed, len(prune))
-	if failed > 0 {
-		return fmt.Errorf("%d of %d deletions failed", failed, len(prune))
+	_, errs := deleteVideos(ctx, client, items, logw)
+	for _, err := range errs {
+		fmt.Fprintf(logw, "  failed to %v\n", err)
+	}
+	fmt.Fprintf(logw, "Deleted %d/%d videos.\n", len(items)-len(errs), len(items))
+	if len(errs) > 0 {
+		return fmt.Errorf("%d of %d deletions failed", len(errs), len(items))
 	}
 	return nil
 }

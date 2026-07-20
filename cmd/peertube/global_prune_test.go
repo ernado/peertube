@@ -233,6 +233,45 @@ func TestGlobalPruneKeepPerChannelProtects(t *testing.T) {
 	}
 }
 
+// A deletion that fails must be reported and counted, and must not stop the
+// remaining deletions.
+func TestGlobalPrunePartialDeletionFailure(t *testing.T) {
+	videos := balancedFixture()
+	gs := newGlobalPruneServer(t, videos)
+	// Reject deletion of one video that the balancing pass is known to select.
+	gs.srv.Config.Handler.(*http.ServeMux).HandleFunc(
+		"/api/v1/videos/1",
+		func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodDelete {
+				w.WriteHeader(http.StatusForbidden)
+				return
+			}
+			fmt.Fprintf(w, `{"id":1,"files":[{"size":%d}],"streamingPlaylists":[]}`, int64(2)<<30)
+		})
+
+	out, err := execViaCmd(t, "prune",
+		"--url", gs.srv.URL, "--username", "a", "--password", "b",
+		"--max-size", "10gb", "--yes",
+	)
+	if err == nil {
+		t.Fatalf("expected an error when a deletion fails:\n%s", out)
+	}
+	if !strings.Contains(err.Error(), "1 of 5 deletions failed") {
+		t.Errorf("error %v should count the failures", err)
+	}
+	// The other four must still have been attempted and succeeded.
+	if got := gs.deletedIDs(); len(got) != 4 {
+		t.Errorf("deleted %v, want the 4 videos that did not fail", got)
+	}
+	if !strings.Contains(out, "Deleted 4/5 videos") {
+		t.Errorf("output missing the partial summary:\n%s", out)
+	}
+	// The failure itself must be named, not just counted.
+	if !strings.Contains(out, "uuid-1") || !strings.Contains(out, "403") {
+		t.Errorf("output should identify the failed video and reason:\n%s", out)
+	}
+}
+
 func TestGlobalPruneRequiresMaxSize(t *testing.T) {
 	gs := newGlobalPruneServer(t, balancedFixture())
 
