@@ -3,7 +3,7 @@ module github.com/ernado/peertube
 go 1.26.4
 
 require (
-	github.com/go-faster/errors v0.7.1
+	github.com/go-faster/errors v0.8.0
 	github.com/schollz/progressbar/v3 v3.19.1
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/term v0.45.0
